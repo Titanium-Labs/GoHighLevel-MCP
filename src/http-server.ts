@@ -34,6 +34,7 @@ import { SurveyTools } from './tools/survey-tools';
 import { StoreTools } from './tools/store-tools';
 import { ProductsTools } from './tools/products-tools.js';
 import { GHLConfig } from './types/ghl-types';
+import { createTokenManagerIfConfigured, TokenManager } from './clients/token-manager.js';
 
 // Load environment variables
 dotenv.config();
@@ -45,6 +46,7 @@ class GHLMCPHttpServer {
   private app: express.Application;
   private server: Server;
   private ghlClient: GHLApiClient;
+  private tokenManager: TokenManager | null = null;
   private contactTools: ContactTools;
   private conversationTools: ConversationTools;
   private blogTools: BlogTools;
@@ -139,27 +141,46 @@ class GHLMCPHttpServer {
   private initializeGHLClient(): GHLApiClient {
     // Load configuration from environment
     const config: GHLConfig = {
-      accessToken: process.env.GHL_API_KEY || '',
+      accessToken: process.env.GHL_API_KEY || 'pending-oauth-token',
       baseUrl: process.env.GHL_BASE_URL || 'https://services.leadconnectorhq.com',
       version: '2021-07-28',
       locationId: process.env.GHL_LOCATION_ID || ''
     };
 
-    // Validate required configuration
-    if (!config.accessToken) {
-      throw new Error('GHL_API_KEY environment variable is required');
-    }
-
     if (!config.locationId) {
       throw new Error('GHL_LOCATION_ID environment variable is required');
+    }
+
+    // Create token manager for OAuth if configured
+    this.tokenManager = createTokenManagerIfConfigured();
+
+    if (!this.tokenManager && !process.env.GHL_API_KEY) {
+      throw new Error('Either MONGO_URI+GHL_APP_CLIENT_ID+GHL_APP_CLIENT_SECRET or GHL_API_KEY must be set');
     }
 
     console.log('[GHL MCP HTTP] Initializing GHL API client...');
     console.log(`[GHL MCP HTTP] Base URL: ${config.baseUrl}`);
     console.log(`[GHL MCP HTTP] Version: ${config.version}`);
     console.log(`[GHL MCP HTTP] Location ID: ${config.locationId}`);
+    console.log(`[GHL MCP HTTP] Auth: ${this.tokenManager ? 'OAuth (MongoDB)' : 'Static API Key'}`);
 
     return new GHLApiClient(config);
+  }
+
+  /**
+   * Ensure the OAuth token is fresh before serving requests
+   */
+  private async refreshOAuthToken(): Promise<void> {
+    if (!this.tokenManager) return;
+    try {
+      const token = await this.tokenManager.getAccessToken();
+      this.ghlClient.updateAccessToken(token);
+    } catch (err) {
+      console.error(`[GHL MCP HTTP] OAuth token refresh error: ${err}`);
+      if (!process.env.GHL_API_KEY) {
+        throw err;
+      }
+    }
   }
 
   /**
@@ -228,6 +249,9 @@ class GHLMCPHttpServer {
       const { name, arguments: args } = request.params;
       
       console.log(`[GHL MCP HTTP] Executing tool: ${name}`);
+
+      // Refresh OAuth token before each tool call
+      await this.refreshOAuthToken();
 
       try {
         let result: any;

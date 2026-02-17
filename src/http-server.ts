@@ -711,6 +711,9 @@ class GHLMCPHttpServer {
     console.log('=========================================');
     
     try {
+      // Fetch OAuth token from MongoDB before testing connection
+      await this.refreshOAuthToken();
+
       // Test GHL API connection
       await this.testGHLConnection();
       

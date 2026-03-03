@@ -675,6 +675,153 @@ node --max-old-space-size=8192 dist/server.js
 - **Memory Usage**: ~50-100MB base
 - **Tool Execution**: < 1 second average
 
+## Recommended Agents
+
+With 269+ tools across 19 categories, loading every tool into a single AI agent is impractical — most agent runtimes cap usable context and tool-call overhead compounds quickly. The recommended pattern is to **split tools into purpose-built agents**, each given only the tools it needs. Below are eight agents that cover the full GoHighLevel MCP surface area with minimal overlap.
+
+| # | Agent | Approx. Tools | Categories |
+|---|-------|--------------|------------|
+| 1 | Contact Management Agent | 31 | Contacts |
+| 2 | Messaging & Conversations Agent | 20 | Messaging/Conversations |
+| 3 | Sales Pipeline Agent | 24 | Opportunities + Calendars |
+| 4 | Marketing Agent | 26 | Email Marketing + Blogs + Social Media + Email Verification + Media Library |
+| 5 | Location & Settings Agent | 35 | Locations + Custom Objects + Associations + Custom Fields V2 + Workflows + Surveys |
+| 6 | E-Commerce Agent | 28 | Store + Products |
+| 7 | Payments & Billing Agent | 59 | Payments + Invoices |
+
+> **Note on Media Library (3 tools):** `get_media_files`, `upload_media_file`, and `delete_media_file` are folded into the Marketing Agent because media assets are most commonly consumed by marketing workflows (blog posts, social posts, email templates). If your usage is primarily e-commerce product imagery you may move them to the E-Commerce Agent instead.
+
+---
+
+### 1. Contact Management Agent (~31 tools)
+
+Handles the full contact lifecycle: create, read, update, delete, bulk operations, tags, tasks, notes, followers, campaigns, and workflows.
+
+<details>
+<summary>Tool list</summary>
+
+`create_contact`, `search_contacts`, `get_contact`, `update_contact`, `delete_contact`, `add_contact_tags`, `remove_contact_tags`, `get_contact_tasks`, `create_contact_task`, `get_contact_task`, `update_contact_task`, `delete_contact_task`, `update_task_completion`, `get_contact_notes`, `create_contact_note`, `get_contact_note`, `update_contact_note`, `delete_contact_note`, `upsert_contact`, `get_duplicate_contact`, `get_contacts_by_business`, `get_contact_appointments`, `bulk_update_contact_tags`, `bulk_update_contact_business`, `add_contact_followers`, `remove_contact_followers`, `add_contact_to_campaign`, `remove_contact_from_campaign`, `remove_contact_from_all_campaigns`, `add_contact_to_workflow`, `remove_contact_from_workflow`
+
+</details>
+
+**Example prompt:** "Find all contacts tagged 'VIP', check for duplicates, and add them to the 'High-Value Nurture' workflow."
+
+---
+
+### 2. Messaging & Conversations Agent (~20 tools)
+
+Manages all inbound and outbound communication: SMS, email, live chat, call recordings, transcriptions, and conversation threads.
+
+<details>
+<summary>Tool list</summary>
+
+`send_sms`, `send_email`, `search_conversations`, `get_conversation`, `create_conversation`, `update_conversation`, `get_recent_messages`, `delete_conversation`, `get_email_message`, `get_message`, `upload_message_attachments`, `update_message_status`, `add_inbound_message`, `add_outbound_call`, `get_message_recording`, `get_message_transcription`, `download_transcription`, `cancel_scheduled_message`, `cancel_scheduled_email`, `live_chat_typing`
+
+</details>
+
+**Example prompt:** "Search for open conversations from the last 48 hours, transcribe any call recordings, and send a follow-up SMS to contacts who haven't replied."
+
+---
+
+### 3. Sales Pipeline Agent (~24 tools)
+
+Covers opportunity management across all pipeline stages and the full calendar/appointment booking flow.
+
+<details>
+<summary>Tool list</summary>
+
+**Opportunities (10):** `search_opportunities`, `get_pipelines`, `get_opportunity`, `create_opportunity`, `update_opportunity_status`, `delete_opportunity`, `update_opportunity`, `upsert_opportunity`, `add_opportunity_followers`, `remove_opportunity_followers`
+
+**Calendars (14):** `get_calendar_groups`, `get_calendars`, `create_calendar`, `get_calendar`, `update_calendar`, `delete_calendar`, `get_calendar_events`, `get_free_slots`, `create_appointment`, `get_appointment`, `update_appointment`, `delete_appointment`, `create_block_slot`, `update_block_slot`
+
+</details>
+
+**Example prompt:** "Create an opportunity for John Smith worth $8,000 in the Enterprise pipeline, then book a discovery call for next Thursday using the first available 30-minute slot."
+
+---
+
+### 4. Marketing Agent (~26 tools)
+
+Drives all outbound marketing: email campaigns and templates, blog content, social media scheduling across platforms, email deliverability verification, and the shared media library.
+
+<details>
+<summary>Tool list</summary>
+
+**Email Marketing (5):** `get_email_campaigns`, `create_email_template`, `get_email_templates`, `update_email_template`, `delete_email_template`
+
+**Blogs (7):** `create_blog_post`, `update_blog_post`, `get_blog_posts`, `get_blog_sites`, `get_blog_authors`, `get_blog_categories`, `check_url_slug`
+
+**Social Media (17):** `search_social_posts`, `create_social_post`, `get_social_post`, `update_social_post`, `delete_social_post`, `bulk_delete_social_posts`, `get_social_accounts`, `delete_social_account`, `upload_social_csv`, `get_csv_upload_status`, `set_csv_accounts`, `get_social_categories`, `get_social_tags`, `get_social_tags_by_ids`, `start_social_oauth`, `get_oauth_accounts`, `attach_oauth_account`
+
+**Email Verification (1):** `verify_email`
+
+**Media Library (3):** `get_media_files`, `upload_media_file`, `delete_media_file`
+
+</details>
+
+**Example prompt:** "Upload the new product banner to the media library, use it in a blog post and a social post scheduled for all connected platforms, then verify the email list before sending the campaign."
+
+---
+
+### 5. Location & Settings Agent (~35 tools)
+
+Manages sub-account configuration, custom data models (objects, fields, associations), automation workflows, and survey data.
+
+<details>
+<summary>Tool list</summary>
+
+**Locations (24):** `search_locations`, `get_location`, `create_location`, `update_location`, `delete_location`, `get_location_tags`, `create_location_tag`, `get_location_tag`, `update_location_tag`, `delete_location_tag`, `search_location_tasks`, `get_location_custom_fields`, `create_location_custom_field`, `get_location_custom_field`, `update_location_custom_field`, `delete_location_custom_field`, `get_location_custom_values`, `create_location_custom_value`, `get_location_custom_value`, `update_location_custom_value`, `delete_location_custom_value`, `get_location_templates`, `delete_location_template`, `get_timezones`
+
+**Custom Objects (9):** `get_all_objects`, `create_object_schema`, `get_object_schema`, `update_object_schema`, `create_object_record`, `get_object_record`, `update_object_record`, `delete_object_record`, `search_object_records`
+
+**Associations (10):** `ghl_get_all_associations`, `ghl_create_association`, `ghl_get_association_by_id`, `ghl_update_association`, `ghl_delete_association`, `ghl_get_association_by_key`, `ghl_get_association_by_object_key`, `ghl_create_relation`, `ghl_get_relations_by_record`, `ghl_delete_relation`
+
+**Custom Fields V2 (8):** `ghl_get_custom_field_by_id`, `ghl_create_custom_field`, `ghl_update_custom_field`, `ghl_delete_custom_field`, `ghl_get_custom_fields_by_object_key`, `ghl_create_custom_field_folder`, `ghl_update_custom_field_folder`, `ghl_delete_custom_field_folder`
+
+**Workflows (1):** `ghl_get_workflows`
+
+**Surveys (2):** `ghl_get_surveys`, `ghl_get_survey_submissions`
+
+</details>
+
+**Example prompt:** "Create a 'Support Ticket' custom object schema, link it to the Contacts object via an association, and pull all workflow automations to confirm the ticket-escalation workflow exists."
+
+---
+
+### 6. E-Commerce Agent (~28 tools)
+
+Controls the store layer: shipping zones, rates, and carriers, plus the full product and inventory catalog.
+
+<details>
+<summary>Tool list</summary>
+
+**Store (18):** `ghl_create_shipping_zone`, `ghl_list_shipping_zones`, `ghl_get_shipping_zone`, `ghl_update_shipping_zone`, `ghl_delete_shipping_zone`, `ghl_create_shipping_rate`, `ghl_list_shipping_rates`, `ghl_get_shipping_rate`, `ghl_update_shipping_rate`, `ghl_delete_shipping_rate`, `ghl_get_available_shipping_rates`, `ghl_create_shipping_carrier`, `ghl_list_shipping_carriers`, `ghl_update_shipping_carrier`, `ghl_create_store_setting`, `ghl_get_store_setting`, plus 2 more
+
+**Products (10):** `ghl_create_product`, `ghl_list_products`, `ghl_get_product`, `ghl_update_product`, `ghl_delete_product`, `ghl_create_price`, `ghl_list_prices`, `ghl_list_inventory`, `ghl_create_product_collection`, `ghl_list_product_collections`
+
+</details>
+
+**Example prompt:** "List all products with inventory below 10 units, create a restock price adjustment for the affected SKUs, and confirm the correct shipping zone is applied."
+
+---
+
+### 7. Payments & Billing Agent (~59 tools)
+
+End-to-end revenue operations: payment provider integrations, orders, transactions, subscriptions, coupons, invoices, invoice schedules, estimates, and estimate templates.
+
+<details>
+<summary>Tool list</summary>
+
+**Payments (20):** `create_whitelabel_integration_provider`, `list_whitelabel_integration_providers`, `list_orders`, `get_order_by_id`, `create_order_fulfillment`, `list_order_fulfillments`, `list_transactions`, `get_transaction_by_id`, `list_subscriptions`, `get_subscription_by_id`, `list_coupons`, `create_coupon`, `update_coupon`, `delete_coupon`, `get_coupon`, `create_custom_provider_integration`, `delete_custom_provider_integration`, `get_custom_provider_config`, `create_custom_provider_config`, plus more
+
+**Invoices (39):** `create_invoice_template`, `list_invoice_templates`, `get_invoice_template`, `update_invoice_template`, `delete_invoice_template`, `update_invoice_template_late_fees`, `update_invoice_template_payment_methods`, `create_invoice_schedule`, `list_invoice_schedules`, `get_invoice_schedule`, `update_invoice_schedule`, `delete_invoice_schedule`, `schedule_invoice_schedule`, `auto_payment_invoice_schedule`, `cancel_invoice_schedule`, `create_invoice`, `list_invoices`, `get_invoice`, `update_invoice`, `delete_invoice`, `void_invoice`, `send_invoice`, `record_invoice_payment`, `generate_invoice_number`, `text2pay_invoice`, `create_estimate`, `list_estimates`, `update_estimate`, `delete_estimate`, `send_estimate`, `create_invoice_from_estimate`, `generate_estimate_number`, `list_estimate_templates`, `create_estimate_template`, `update_estimate_template`, `delete_estimate_template`, `preview_estimate_template`, plus more
+
+</details>
+
+**Example prompt:** "Generate an estimate for a new enterprise client, convert it to an invoice once approved, set up a monthly recurring schedule with auto-pay, and apply a 10% loyalty coupon."
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions from the GoHighLevel community!

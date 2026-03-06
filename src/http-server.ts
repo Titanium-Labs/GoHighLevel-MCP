@@ -121,7 +121,7 @@ class GHLMCPHttpServer {
     this.app.use(cors({
       origin: ['https://chatgpt.com', 'https://chat.openai.com', 'http://localhost:*'],
       methods: ['GET', 'POST', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Location-Id'],
       credentials: true
     }));
 
@@ -148,14 +148,15 @@ class GHLMCPHttpServer {
     };
 
     if (!config.locationId) {
-      throw new Error('GHL_LOCATION_ID environment variable is required');
+      console.log('[GHL MCP HTTP] No GHL_LOCATION_ID set — /call endpoint requires X-Location-Id header');
+      config.locationId = 'pending';
     }
 
     // Create token manager for OAuth if configured
     this.tokenManager = createTokenManagerIfConfigured();
 
     if (!this.tokenManager && !process.env.GHL_API_KEY) {
-      throw new Error('Either MONGO_URI+GHL_APP_CLIENT_ID+GHL_APP_CLIENT_SECRET or GHL_API_KEY must be set');
+      console.log('[GHL MCP HTTP] No GHL_API_KEY set — SSE/MCP will not work, but /call endpoint will accept per-request auth');
     }
 
     console.log('[GHL MCP HTTP] Initializing GHL API client...');
@@ -331,6 +332,112 @@ class GHLMCPHttpServer {
       });
     });
 
+    // REST endpoint for tool execution with per-request auth
+    this.app.post('/call', async (req, res) => {
+      const authHeader = req.headers['authorization'];
+      const locationId = (req.headers['x-location-id'] as string) || process.env.GHL_LOCATION_ID || '';
+
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        res.status(401).json({
+          error: 'Authorization header required. Use: Authorization: Bearer <ghl_access_token>'
+        });
+        return;
+      }
+
+      const accessToken = authHeader.replace('Bearer ', '');
+      const { tool, params } = req.body;
+
+      if (!tool) {
+        res.status(400).json({ error: 'Missing "tool" in request body' });
+        return;
+      }
+
+      console.log(`[HTTP /call] Tool: ${tool}, Location: ${locationId}`);
+
+      try {
+        // Create a temporary GHL client with the provided credentials
+        const tempConfig: GHLConfig = {
+          accessToken,
+          baseUrl: process.env.GHL_BASE_URL || 'https://services.leadconnectorhq.com',
+          version: '2021-07-28',
+          locationId
+        };
+        const tempClient = new GHLApiClient(tempConfig);
+
+        // Create temporary tool instances with the per-request client
+        const tempTools = {
+          contact: new ContactTools(tempClient),
+          conversation: new ConversationTools(tempClient),
+          blog: new BlogTools(tempClient),
+          opportunity: new OpportunityTools(tempClient),
+          calendar: new CalendarTools(tempClient),
+          email: new EmailTools(tempClient),
+          location: new LocationTools(tempClient),
+          emailISV: new EmailISVTools(tempClient),
+          socialMedia: new SocialMediaTools(tempClient),
+          media: new MediaTools(tempClient),
+          object: new ObjectTools(tempClient),
+          association: new AssociationTools(tempClient),
+          customFieldV2: new CustomFieldV2Tools(tempClient),
+          workflow: new WorkflowTools(tempClient),
+          survey: new SurveyTools(tempClient),
+          store: new StoreTools(tempClient),
+          products: new ProductsTools(tempClient),
+        };
+
+        let result: any;
+
+        if (this.isContactTool(tool)) {
+          result = await tempTools.contact.executeTool(tool, params || {});
+        } else if (this.isConversationTool(tool)) {
+          result = await tempTools.conversation.executeTool(tool, params || {});
+        } else if (this.isBlogTool(tool)) {
+          result = await tempTools.blog.executeTool(tool, params || {});
+        } else if (this.isOpportunityTool(tool)) {
+          result = await tempTools.opportunity.executeTool(tool, params || {});
+        } else if (this.isCalendarTool(tool)) {
+          result = await tempTools.calendar.executeTool(tool, params || {});
+        } else if (this.isEmailTool(tool)) {
+          result = await tempTools.email.executeTool(tool, params || {});
+        } else if (this.isLocationTool(tool)) {
+          result = await tempTools.location.executeTool(tool, params || {});
+        } else if (this.isEmailISVTool(tool)) {
+          result = await tempTools.emailISV.executeTool(tool, params || {});
+        } else if (this.isSocialMediaTool(tool)) {
+          result = await tempTools.socialMedia.executeTool(tool, params || {});
+        } else if (this.isMediaTool(tool)) {
+          result = await tempTools.media.executeTool(tool, params || {});
+        } else if (this.isObjectTool(tool)) {
+          result = await tempTools.object.executeTool(tool, params || {});
+        } else if (this.isAssociationTool(tool)) {
+          result = await tempTools.association.executeAssociationTool(tool, params || {});
+        } else if (this.isCustomFieldV2Tool(tool)) {
+          result = await tempTools.customFieldV2.executeCustomFieldV2Tool(tool, params || {});
+        } else if (this.isWorkflowTool(tool)) {
+          result = await tempTools.workflow.executeWorkflowTool(tool, params || {});
+        } else if (this.isSurveyTool(tool)) {
+          result = await tempTools.survey.executeSurveyTool(tool, params || {});
+        } else if (this.isStoreTool(tool)) {
+          result = await tempTools.store.executeStoreTool(tool, params || {});
+        } else if (this.isProductsTool(tool)) {
+          result = await tempTools.products.executeProductsTool(tool, params || {});
+        } else {
+          res.status(404).json({ error: `Unknown tool: ${tool}` });
+          return;
+        }
+
+        console.log(`[HTTP /call] Tool ${tool} executed successfully`);
+        res.json({ success: true, result });
+
+      } catch (error: any) {
+        console.error(`[HTTP /call] Error executing tool ${tool}:`, error?.message || error);
+        res.status(500).json({
+          error: `Tool execution failed: ${error?.message || error}`,
+          tool
+        });
+      }
+    });
+
     // MCP capabilities endpoint
     this.app.get('/capabilities', (req, res) => {
       res.json({
@@ -420,6 +527,7 @@ class GHLMCPHttpServer {
           health: '/health',
           capabilities: '/capabilities',
           tools: '/tools',
+          call: '/call (POST — per-request auth via Authorization header)',
           sse: '/sse'
         },
         tools: this.getToolsCount(),
@@ -714,8 +822,12 @@ class GHLMCPHttpServer {
       // Fetch OAuth token from MongoDB before testing connection
       await this.refreshOAuthToken();
 
-      // Test GHL API connection
-      await this.testGHLConnection();
+      // Test GHL API connection (skip if no static API key — /call will use per-request auth)
+      if (process.env.GHL_API_KEY || this.tokenManager) {
+        await this.testGHLConnection();
+      } else {
+        console.log('[GHL MCP HTTP] Skipping connection test — no GHL_API_KEY set. /call endpoint will use per-request auth.');
+      }
       
       // Start HTTP server
       this.app.listen(this.port, '0.0.0.0', () => {

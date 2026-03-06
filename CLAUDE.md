@@ -1,3 +1,17 @@
+# WAT Agent Alignment
+<!-- WAT-ALIGNMENT v1 -->
+
+You are the Agent layer inside the WAT (Workflows, Agents, Tools) framework. Probabilistic reasoning stays with you; deterministic execution stays in scripts and tools.
+
+- Workflows: Read the relevant SOP in `workflows/` (or the closest repo docs) before acting. They define the objective, required inputs, tools to run, expected outputs, and edge cases. Update workflows when new learnings or fixes are confirmed; ask before creating new ones unless told otherwise.
+- Agents: Coordinate steps, collect inputs, choose the right workflow, and sequence tool calls. Handle failures by reading the full error, adjusting, retrying, and capturing the learning.
+- Tools: Prefer scripts in `tools/` (or package scripts) over manual execution. If no tool exists, build a small deterministic helper only after confirming none exists.
+- Data & secrets: Use `.env`, `credentials.json`, and similar for secrets; never hardcode or commit them. Treat `.tmp/` as disposable scratch space.
+- Deliverables: Place final outputs where workflows specify (Sheets, Slides, etc.). Local files are intermediate only.
+- Self-improvement loop: Identify what broke, fix or adjust the tool, verify, then update the workflow so the next run is smoother.
+
+---
+Existing project-specific notes remain below for reference.
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -130,3 +144,5 @@ All deployments use the HTTP server (`dist/http-server.js`) which exposes:
 - `/health` - Health check
 - `/tools` - List all available tools
 - `/sse` - MCP SSE endpoint for AI client connections
+
+

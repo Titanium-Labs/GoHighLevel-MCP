@@ -839,16 +839,20 @@ function setupGracefulShutdown(): void {
  * Populates process.env so the constructor and token manager pick them up.
  */
 async function loadGHLCredentials(): Promise<void> {
-  const creds = await loadCredentials('ghl', {
-    client_id: 'GHL_APP_CLIENT_ID',
-    client_secret: 'GHL_APP_CLIENT_SECRET',
-    company_id: 'GHL_COMPANY_ID',
-  });
+  try {
+    const creds = await loadCredentials('ghl', {
+      client_id: 'GHL_APP_CLIENT_ID',
+      client_secret: 'GHL_APP_CLIENT_SECRET',
+      company_id: 'GHL_COMPANY_ID',
+    });
 
-  // Write gateway values into process.env so existing code paths work
-  if (creds.client_id) process.env.GHL_APP_CLIENT_ID = creds.client_id;
-  if (creds.client_secret) process.env.GHL_APP_CLIENT_SECRET = creds.client_secret;
-  if (creds.company_id) process.env.GHL_COMPANY_ID = creds.company_id;
+    // Write gateway values into process.env so existing code paths work
+    if (creds.client_id) process.env.GHL_APP_CLIENT_ID = creds.client_id;
+    if (creds.client_secret) process.env.GHL_APP_CLIENT_SECRET = creds.client_secret;
+    if (creds.company_id) process.env.GHL_COMPANY_ID = creds.company_id;
+  } catch (err) {
+    console.error('[gateway] GHL credential fetch failed (non-fatal):', err instanceof Error ? err.message : err);
+  }
 }
 
 /**

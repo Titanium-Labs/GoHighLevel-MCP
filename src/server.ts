@@ -12,6 +12,7 @@ import {
   McpError 
 } from '@modelcontextprotocol/sdk/types.js';
 import * as dotenv from 'dotenv';
+import { loadCredentials } from './gateway-credentials.js';
 
 import { GHLApiClient } from './clients/ghl-api-client';
 import { ContactTools } from './tools/contact-tools.js';
@@ -834,17 +835,37 @@ function setupGracefulShutdown(): void {
 }
 
 /**
+ * Load GHL credentials from Claude Gateway, falling back to env vars.
+ * Populates process.env so the constructor and token manager pick them up.
+ */
+async function loadGHLCredentials(): Promise<void> {
+  const creds = await loadCredentials('ghl', {
+    client_id: 'GHL_APP_CLIENT_ID',
+    client_secret: 'GHL_APP_CLIENT_SECRET',
+    company_id: 'GHL_COMPANY_ID',
+  });
+
+  // Write gateway values into process.env so existing code paths work
+  if (creds.client_id) process.env.GHL_APP_CLIENT_ID = creds.client_id;
+  if (creds.client_secret) process.env.GHL_APP_CLIENT_SECRET = creds.client_secret;
+  if (creds.company_id) process.env.GHL_COMPANY_ID = creds.company_id;
+}
+
+/**
  * Main entry point
  */
 async function main(): Promise<void> {
   try {
     // Setup graceful shutdown
     setupGracefulShutdown();
-    
+
+    // Load credentials from Claude Gateway (falls back to env vars)
+    await loadGHLCredentials();
+
     // Create and start server
     const server = new GHLMCPServer();
     await server.start();
-    
+
   } catch (error) {
     console.error('💥 Fatal error:', error);
     process.exit(1);

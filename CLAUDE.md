@@ -146,3 +146,14 @@ All deployments use the HTTP server (`dist/http-server.js`) which exposes:
 - `/sse` - MCP SSE endpoint for AI client connections
 
 
+
+<!-- PORT-MAP-RULES -->
+## Port Map & Ngrok Rules
+
+**MANDATORY** - All local development must follow these rules:
+
+1. **Follow the root port map**: See `C:\Users\artic\.claude\projects\C--GitHub\PORT_MAP.md` for the complete port allocation. Never use a port already assigned to another repo. If adding a new service, pick an unused port from the map and update the map.
+
+2. **Use ngrok for public URLs**: When a public tunnel is needed, use ngrok with named tunnels defined in `C:\Users\artic\AppData\Local\ngrok\ngrok.yml`. Start tunnels with `ngrok start <tunnel-name>` — never use `ngrok http <port>` directly.
+
+3. **NEVER kill existing ngrok processes**: Other services depend on running ngrok tunnels. Do not run `taskkill /IM ngrok.exe`, `kill`, `pkill ngrok`, or any command that stops ngrok. If a port conflict occurs, change the app's port — not the ngrok process. Start new tunnels additively alongside existing ones.

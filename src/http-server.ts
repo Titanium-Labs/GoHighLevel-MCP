@@ -122,7 +122,7 @@ class GHLMCPHttpServer {
     this.app.use(cors({
       origin: ['https://chatgpt.com', 'https://chat.openai.com', 'http://localhost:*'],
       methods: ['GET', 'POST', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Location-Id'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Location-Id', 'X-Gateway-Token'],
       credentials: true
     }));
 
@@ -324,12 +324,16 @@ class GHLMCPHttpServer {
   private setupRoutes(): void {
     // Health check endpoint
     this.app.get('/health', (req, res) => {
-      res.json({ 
+      res.json({
         status: 'healthy',
         server: 'ghl-mcp-server',
         version: '1.0.0',
         timestamp: new Date().toISOString(),
-        tools: this.getToolsCount()
+        tools: this.getToolsCount(),
+        gateway: {
+          url: process.env.GATEWAY_URL || null,
+          perSessionAuth: 'X-Gateway-Token header supported',
+        },
       });
     });
 
@@ -486,24 +490,31 @@ class GHLMCPHttpServer {
     const handleSSE = async (req: express.Request, res: express.Response) => {
       const sessionId = req.query.sessionId || 'unknown';
       console.log(`[GHL MCP HTTP] New SSE connection from: ${req.ip}, sessionId: ${sessionId}, method: ${req.method}`);
-      
+
       try {
+        // Extract gateway token for per-session credential resolution
+        const gatewayToken = req.headers['x-gateway-token'] as string | undefined;
+        if (gatewayToken) {
+          console.log(`[GHL MCP HTTP] Per-session gateway token provided for session: ${sessionId}`);
+          await loadGHLCredentials(gatewayToken);
+        }
+
         // Create SSE transport (this will set the headers)
         const transport = new SSEServerTransport('/sse', res);
-        
+
         // Connect MCP server to transport
         await this.server.connect(transport);
-        
+
         console.log(`[GHL MCP HTTP] SSE connection established for session: ${sessionId}`);
-        
+
         // Handle client disconnect
         req.on('close', () => {
           console.log(`[GHL MCP HTTP] SSE connection closed for session: ${sessionId}`);
         });
-        
+
       } catch (error) {
         console.error(`[GHL MCP HTTP] SSE connection error for session ${sessionId}:`, error);
-        
+
         // Only send error response if headers haven't been sent yet
         if (!res.headersSent) {
           res.status(500).json({ error: 'Failed to establish SSE connection' });
@@ -532,6 +543,10 @@ class GHLMCPHttpServer {
           sse: '/sse'
         },
         tools: this.getToolsCount(),
+        gateway: {
+          url: process.env.GATEWAY_URL || null,
+          perSessionAuth: 'X-Gateway-Token header supported',
+        },
         documentation: 'https://github.com/your-repo/ghl-mcp-server'
       });
     });
@@ -864,13 +879,13 @@ function setupGracefulShutdown(): void {
  * Load GHL credentials from Claude Gateway, falling back to env vars.
  * Populates process.env so the constructor and token manager pick them up.
  */
-async function loadGHLCredentials(): Promise<void> {
+async function loadGHLCredentials(gatewayToken?: string): Promise<void> {
   try {
     const creds = await loadCredentials('ghl', {
       client_id: 'GHL_APP_CLIENT_ID',
       client_secret: 'GHL_APP_CLIENT_SECRET',
       company_id: 'GHL_COMPANY_ID',
-    });
+    }, gatewayToken ? { gatewayToken } : undefined);
 
     if (creds.client_id) process.env.GHL_APP_CLIENT_ID = creds.client_id;
     if (creds.client_secret) process.env.GHL_APP_CLIENT_SECRET = creds.client_secret;

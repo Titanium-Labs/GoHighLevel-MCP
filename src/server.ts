@@ -838,13 +838,13 @@ function setupGracefulShutdown(): void {
  * Load GHL credentials from Claude Gateway, falling back to env vars.
  * Populates process.env so the constructor and token manager pick them up.
  */
-async function loadGHLCredentials(): Promise<void> {
+async function loadGHLCredentials(gatewayToken?: string): Promise<void> {
   try {
     const creds = await loadCredentials('ghl', {
       client_id: 'GHL_APP_CLIENT_ID',
       client_secret: 'GHL_APP_CLIENT_SECRET',
       company_id: 'GHL_COMPANY_ID',
-    });
+    }, gatewayToken ? { gatewayToken } : undefined);
 
     // Write gateway values into process.env so existing code paths work
     if (creds.client_id) process.env.GHL_APP_CLIENT_ID = creds.client_id;

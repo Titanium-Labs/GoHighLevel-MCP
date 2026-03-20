@@ -129,6 +129,22 @@ class GHLMCPHttpServer {
     // Parse JSON requests
     this.app.use(express.json());
 
+    // Multi-tenant auth: X-Gateway-Token is the sole auth mechanism
+    this.app.use((req, res, next) => {
+      const skipAuth = ['/', '/health', '/capabilities', '/tools'].includes(req.path);
+      // /call uses its own Bearer auth, so also skip gateway check there
+      if (skipAuth || req.path === '/call') return next();
+      const gatewayToken = req.headers['x-gateway-token'] as string | undefined;
+      if (!gatewayToken) {
+        res.status(401).json({
+          error: 'Missing X-Gateway-Token header',
+          help: 'Pass your Claude Gateway API token (cgw_xxx) as the X-Gateway-Token header. Get one at https://claude-gateway.coolify.titaniumlabs.us/dashboard',
+        });
+        return;
+      }
+      next();
+    });
+
     // Request logging
     this.app.use((req, res, next) => {
       console.log(`[HTTP] ${req.method} ${req.path} - ${new Date().toISOString()}`);

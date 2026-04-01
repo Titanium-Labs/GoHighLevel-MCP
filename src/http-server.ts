@@ -335,6 +335,123 @@ class GHLMCPHttpServer {
   }
 
   /**
+   * Create a per-session MCP Server instance with its own GHLApiClient and tools.
+   * This avoids mutating global state (process.env) when multiple sessions
+   * connect with different gateway tokens.
+   */
+  private createPerSessionMCPServer(ghlClient: GHLApiClient): Server {
+    const server = new Server(
+      {
+        name: 'ghl-mcp-server',
+        version: '1.0.0',
+      },
+      {
+        capabilities: {
+          tools: {},
+        },
+      }
+    );
+
+    // Create per-session tool instances
+    const contactTools = new ContactTools(ghlClient);
+    const conversationTools = new ConversationTools(ghlClient);
+    const blogTools = new BlogTools(ghlClient);
+    const opportunityTools = new OpportunityTools(ghlClient);
+    const calendarTools = new CalendarTools(ghlClient);
+    const emailTools = new EmailTools(ghlClient);
+    const locationTools = new LocationTools(ghlClient);
+    const emailISVTools = new EmailISVTools(ghlClient);
+    const socialMediaTools = new SocialMediaTools(ghlClient);
+    const mediaTools = new MediaTools(ghlClient);
+    const objectTools = new ObjectTools(ghlClient);
+    const associationTools = new AssociationTools(ghlClient);
+    const customFieldV2Tools = new CustomFieldV2Tools(ghlClient);
+    const workflowTools = new WorkflowTools(ghlClient);
+    const surveyTools = new SurveyTools(ghlClient);
+    const storeTools = new StoreTools(ghlClient);
+    const productsTools = new ProductsTools(ghlClient);
+
+    // Register list tools handler
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+      const allTools = [
+        ...contactTools.getToolDefinitions(),
+        ...conversationTools.getToolDefinitions(),
+        ...blogTools.getToolDefinitions(),
+        ...opportunityTools.getToolDefinitions(),
+        ...calendarTools.getToolDefinitions(),
+        ...emailTools.getToolDefinitions(),
+        ...locationTools.getToolDefinitions(),
+        ...emailISVTools.getToolDefinitions(),
+        ...socialMediaTools.getTools(),
+        ...mediaTools.getToolDefinitions(),
+        ...objectTools.getToolDefinitions(),
+        ...associationTools.getTools(),
+        ...customFieldV2Tools.getTools(),
+        ...workflowTools.getTools(),
+        ...surveyTools.getTools(),
+        ...storeTools.getTools(),
+        ...productsTools.getTools(),
+      ];
+      return { tools: allTools };
+    });
+
+    // Register tool execution handler
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params;
+
+      try {
+        let result: any;
+
+        if (this.isContactTool(name)) {
+          result = await contactTools.executeTool(name, args || {});
+        } else if (this.isConversationTool(name)) {
+          result = await conversationTools.executeTool(name, args || {});
+        } else if (this.isBlogTool(name)) {
+          result = await blogTools.executeTool(name, args || {});
+        } else if (this.isOpportunityTool(name)) {
+          result = await opportunityTools.executeTool(name, args || {});
+        } else if (this.isCalendarTool(name)) {
+          result = await calendarTools.executeTool(name, args || {});
+        } else if (this.isEmailTool(name)) {
+          result = await emailTools.executeTool(name, args || {});
+        } else if (this.isLocationTool(name)) {
+          result = await locationTools.executeTool(name, args || {});
+        } else if (this.isEmailISVTool(name)) {
+          result = await emailISVTools.executeTool(name, args || {});
+        } else if (this.isSocialMediaTool(name)) {
+          result = await socialMediaTools.executeTool(name, args || {});
+        } else if (this.isMediaTool(name)) {
+          result = await mediaTools.executeTool(name, args || {});
+        } else if (this.isObjectTool(name)) {
+          result = await objectTools.executeTool(name, args || {});
+        } else if (this.isAssociationTool(name)) {
+          result = await associationTools.executeAssociationTool(name, args || {});
+        } else if (this.isCustomFieldV2Tool(name)) {
+          result = await customFieldV2Tools.executeCustomFieldV2Tool(name, args || {});
+        } else if (this.isWorkflowTool(name)) {
+          result = await workflowTools.executeWorkflowTool(name, args || {});
+        } else if (this.isSurveyTool(name)) {
+          result = await surveyTools.executeSurveyTool(name, args || {});
+        } else if (this.isStoreTool(name)) {
+          result = await storeTools.executeStoreTool(name, args || {});
+        } else if (this.isProductsTool(name)) {
+          result = await productsTools.executeProductsTool(name, args || {});
+        } else {
+          throw new Error(`Unknown tool: ${name}`);
+        }
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (error) {
+        throw new McpError(ErrorCode.InternalError, `Tool execution failed: ${error}`);
+      }
+    });
+
+    return server;
+  }
+
+  /**
    * Setup HTTP routes
    */
   private setupRoutes(): void {
@@ -510,16 +627,53 @@ class GHLMCPHttpServer {
       try {
         // Extract gateway token for per-session credential resolution
         const gatewayToken = req.headers['x-gateway-token'] as string | undefined;
+        let mcpServer: Server;
+
         if (gatewayToken) {
           console.log(`[GHL MCP HTTP] Per-session gateway token provided for session: ${sessionId}`);
-          await loadGHLCredentials(gatewayToken);
+          try {
+            const creds = await fetchGHLCredentials(gatewayToken);
+            // Create a per-session GHLApiClient with scoped credentials — no process.env mutation
+            const sessionConfig: GHLConfig = {
+              accessToken: process.env.GHL_API_KEY || 'pending-oauth-token',
+              baseUrl: process.env.GHL_BASE_URL || 'https://services.leadconnectorhq.com',
+              version: '2021-07-28',
+              locationId: process.env.GHL_LOCATION_ID || 'pending',
+            };
+            const sessionClient = new GHLApiClient(sessionConfig);
+
+            // Create a per-session token manager with the session-scoped credentials
+            const mongoUri = process.env.MONGO_URI;
+            if (mongoUri && creds.client_id && creds.client_secret) {
+              const sessionTokenManager = new TokenManager({
+                mongoUri,
+                companyId: creds.company_id || process.env.GHL_COMPANY_ID || '',
+                clientId: creds.client_id,
+                clientSecret: creds.client_secret,
+              });
+              try {
+                const token = await sessionTokenManager.getAccessToken();
+                sessionClient.updateAccessToken(token);
+              } catch (tokenErr) {
+                console.error(`[GHL MCP HTTP] Per-session OAuth token fetch failed for session ${sessionId}:`, tokenErr instanceof Error ? tokenErr.message : tokenErr);
+              }
+            }
+
+            mcpServer = this.createPerSessionMCPServer(sessionClient);
+            console.log(`[GHL MCP HTTP] Per-session MCP server created for session: ${sessionId}`);
+          } catch (err) {
+            console.error(`[GHL MCP HTTP] Per-session credential fetch failed for session ${sessionId}, falling back to shared server:`, err instanceof Error ? err.message : err);
+            mcpServer = this.server;
+          }
+        } else {
+          mcpServer = this.server;
         }
 
         // Create SSE transport (this will set the headers)
         const transport = new SSEServerTransport('/sse', res);
 
-        // Connect MCP server to transport
-        await this.server.connect(transport);
+        // Connect the (per-session or shared) MCP server to transport
+        await mcpServer.connect(transport);
 
         console.log(`[GHL MCP HTTP] SSE connection established for session: ${sessionId}`);
 
@@ -892,16 +1046,17 @@ function setupGracefulShutdown(): void {
 }
 
 /**
- * Load GHL credentials from Claude Gateway, falling back to env vars.
+ * Load GHL credentials from Claude Gateway at boot time.
  * Populates process.env so the constructor and token manager pick them up.
+ * This is ONLY called once at startup — never for per-session credential fetches.
  */
-async function loadGHLCredentials(gatewayToken?: string): Promise<void> {
+async function loadGHLCredentials(): Promise<void> {
   try {
     const creds = await loadCredentials('ghl', {
       client_id: 'GHL_APP_CLIENT_ID',
       client_secret: 'GHL_APP_CLIENT_SECRET',
       company_id: 'GHL_COMPANY_ID',
-    }, gatewayToken ? { gatewayToken } : undefined);
+    });
 
     if (creds.client_id) process.env.GHL_APP_CLIENT_ID = creds.client_id;
     if (creds.client_secret) process.env.GHL_APP_CLIENT_SECRET = creds.client_secret;
@@ -909,6 +1064,25 @@ async function loadGHLCredentials(gatewayToken?: string): Promise<void> {
   } catch (err) {
     console.error('[gateway] GHL credential fetch failed (non-fatal):', err instanceof Error ? err.message : err);
   }
+}
+
+/**
+ * Fetch GHL credentials for a specific gateway token WITHOUT mutating process.env.
+ * Used for per-session credential isolation — each session gets its own credentials
+ * scoped to its MCP server instance, preventing cross-tenant contamination.
+ */
+async function fetchGHLCredentials(gatewayToken: string): Promise<{ client_id: string; client_secret: string; company_id: string }> {
+  const creds = await loadCredentials('ghl', {
+    client_id: 'GHL_APP_CLIENT_ID',
+    client_secret: 'GHL_APP_CLIENT_SECRET',
+    company_id: 'GHL_COMPANY_ID',
+  }, { gatewayToken });
+
+  return {
+    client_id: creds.client_id || '',
+    client_secret: creds.client_secret || '',
+    company_id: creds.company_id || '',
+  };
 }
 
 /**

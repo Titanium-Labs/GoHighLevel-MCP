@@ -633,29 +633,31 @@ class GHLMCPHttpServer {
           console.log(`[GHL MCP HTTP] Per-session gateway token provided for session: ${sessionId}`);
           try {
             const creds = await fetchGHLCredentials(gatewayToken);
-            // Create a per-session GHLApiClient with scoped credentials — no process.env mutation
+            // Create a per-session GHLApiClient with gateway-provided credentials
             const sessionConfig: GHLConfig = {
-              accessToken: process.env.GHL_API_KEY || 'pending-oauth-token',
+              accessToken: creds.access_token || process.env.GHL_API_KEY || 'pending-oauth-token',
               baseUrl: process.env.GHL_BASE_URL || 'https://services.leadconnectorhq.com',
               version: '2021-07-28',
-              locationId: process.env.GHL_LOCATION_ID || 'pending',
+              locationId: creds.location_id || process.env.GHL_LOCATION_ID || '',
             };
             const sessionClient = new GHLApiClient(sessionConfig);
 
-            // Create a per-session token manager with the session-scoped credentials
-            const mongoUri = process.env.MONGO_URI;
-            if (mongoUri && creds.client_id && creds.client_secret) {
-              const sessionTokenManager = new TokenManager({
-                mongoUri,
-                companyId: creds.company_id || process.env.GHL_COMPANY_ID || '',
-                clientId: creds.client_id,
-                clientSecret: creds.client_secret,
-              });
-              try {
-                const token = await sessionTokenManager.getAccessToken();
-                sessionClient.updateAccessToken(token);
-              } catch (tokenErr) {
-                console.error(`[GHL MCP HTTP] Per-session OAuth token fetch failed for session ${sessionId}:`, tokenErr instanceof Error ? tokenErr.message : tokenErr);
+            // If no access_token from gateway, try MongoDB token manager as fallback
+            if (!creds.access_token) {
+              const mongoUri = process.env.MONGO_URI;
+              if (mongoUri && creds.client_id && creds.client_secret) {
+                const sessionTokenManager = new TokenManager({
+                  mongoUri,
+                  companyId: creds.company_id || process.env.GHL_COMPANY_ID || '',
+                  clientId: creds.client_id,
+                  clientSecret: creds.client_secret,
+                });
+                try {
+                  const token = await sessionTokenManager.getAccessToken();
+                  sessionClient.updateAccessToken(token);
+                } catch (tokenErr) {
+                  console.error(`[GHL MCP HTTP] Per-session OAuth token fetch failed for session ${sessionId}:`, tokenErr instanceof Error ? tokenErr.message : tokenErr);
+                }
               }
             }
 
@@ -1071,17 +1073,26 @@ async function loadGHLCredentials(): Promise<void> {
  * Used for per-session credential isolation — each session gets its own credentials
  * scoped to its MCP server instance, preventing cross-tenant contamination.
  */
-async function fetchGHLCredentials(gatewayToken: string): Promise<{ client_id: string; client_secret: string; company_id: string }> {
+async function fetchGHLCredentials(gatewayToken: string): Promise<{
+  client_id: string; client_secret: string; company_id: string;
+  access_token: string; refresh_token: string; location_id: string;
+}> {
   const creds = await loadCredentials('ghl', {
     client_id: 'GHL_APP_CLIENT_ID',
     client_secret: 'GHL_APP_CLIENT_SECRET',
     company_id: 'GHL_COMPANY_ID',
+    access_token: 'GHL_ACCESS_TOKEN',
+    refresh_token: 'GHL_REFRESH_TOKEN',
+    location_id: 'GHL_LOCATION_ID',
   }, { gatewayToken });
 
   return {
     client_id: creds.client_id || '',
     client_secret: creds.client_secret || '',
     company_id: creds.company_id || '',
+    access_token: creds.access_token || '',
+    refresh_token: creds.refresh_token || '',
+    location_id: creds.location_id || '',
   };
 }
 
